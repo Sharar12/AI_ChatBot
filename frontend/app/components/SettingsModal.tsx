@@ -208,12 +208,32 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
           {activeTab === 'api' && (
             <div className="space-y-4">
+              {/* Local llama-server Section */}
+              <div className="p-3.5 rounded-xl bg-gradient-to-r from-emerald-950/40 to-teal-950/30 border border-emerald-500/20 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Server className="w-4 h-4 text-emerald-400" />
+                    <span className="font-semibold text-xs text-zinc-100">Local Llama Server</span>
+                  </div>
+                  <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    Port 8085 (Gemma 4 E2B)
+                  </span>
+                </div>
+                <p className="text-[11px] text-zinc-400 leading-relaxed">
+                  Powers the offline, RTX GPU-accelerated engine via <code className="text-zinc-200 bg-white/10 px-1 py-0.5 rounded font-mono">run-llama-server.bat</code> with Flash Attention and 128k context.
+                </p>
+                <div className="text-[11px] font-mono text-zinc-300 bg-black/40 border border-white/5 rounded-lg p-2 select-all">
+                  Endpoint: http://127.0.0.1:8085/v1/chat/completions
+                </div>
+              </div>
+
               {/* Live LLM API Key section */}
               <div className="p-3.5 rounded-xl bg-gradient-to-r from-indigo-950/50 to-purple-950/40 border border-indigo-500/20 space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Key className="w-4 h-4 text-indigo-400" />
-                    <span className="font-semibold text-xs text-zinc-100">Live AI API Key</span>
+                    <span className="font-semibold text-xs text-zinc-100">Cloud AI API Keys (Optional)</span>
                   </div>
                   <a
                     href="https://aistudio.google.com/app/apikey"
@@ -236,7 +256,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       onChange={(e) =>
                         setCurrentSettings({
                           ...currentSettings,
-                          apiProvider: e.target.value as any,
+                          apiProvider: e.target.value as UserSettings['apiProvider'],
                         })
                       }
                       className="bg-zinc-900 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 outline-none"

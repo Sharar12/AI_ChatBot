@@ -12,46 +12,56 @@ use Illuminate\Support\Facades\Http;
 
 Route::post('/chat', function (Request $request) {
     $prompt = trim($request->input('prompt', ''));
-    $model = $request->input('model', 'ling-3.1-flash-free');
+    $model = $request->input('model', 'gemma-4-e2b');
     $deepThink = $request->boolean('deepThink');
     $webSearch = $request->boolean('webSearch');
     $attachments = $request->input('attachments', []);
+    $messages = $request->input('messages', []);
 
-    // Try communicating with local OpenCode server on port 4096
+    // Try communicating with local llama-server on port 8085
     try {
-        $sessionRes = Http::timeout(3)->post('http://127.0.0.1:4096/session', [
-            'title' => 'Laravel Chat Session',
+        $chatMessages = [];
+        if (!empty($messages) && is_array($messages)) {
+            foreach ($messages as $m) {
+                if (isset($m['role'], $m['content'])) {
+                    $chatMessages[] = [
+                        'role' => $m['role'],
+                        'content' => (string)$m['content'],
+                    ];
+                }
+            }
+        }
+
+        if (empty($chatMessages)) {
+            $userContent = $prompt;
+            if (!empty($attachments)) {
+                $userContent .= "\n\n[Attachments: " . implode(', ', array_map(fn($a) => $a['name'] ?? 'file', $attachments)) . "]";
+            }
+            $chatMessages[] = ['role' => 'user', 'content' => $userContent];
+        }
+
+        $llamaRes = Http::timeout(60)->post('http://127.0.0.1:8085/v1/chat/completions', [
+            'messages' => $chatMessages,
+            'temperature' => (float)$request->input('temperature', 0.6),
+            'top_p' => (float)$request->input('top_p', 0.95),
+            'max_tokens' => (int)$request->input('max_tokens', 4096),
         ]);
 
-        if ($sessionRes->successful()) {
-            $sessionId = $sessionRes->json('id');
-            $msgRes = Http::timeout(30)->post("http://127.0.0.1:4096/session/{$sessionId}/message", [
-                'model' => [
-                    'providerID' => 'opencode',
-                    'modelID' => 'ling-3.1-flash-free',
-                ],
-                'parts' => [
-                    ['type' => 'text', 'text' => $prompt],
-                ],
+        if ($llamaRes->successful()) {
+            $data = $llamaRes->json();
+            $choice = $data['choices'][0]['message'] ?? [];
+            $reply = $choice['content'] ?? '';
+            $reasoning = $choice['reasoning_content'] ?? null;
+
+            return response()->json([
+                'status' => 'success',
+                'reply' => $reply,
+                'thinking' => $reasoning,
+                'model' => 'Gemma 4 E2B (llama-server :8085)',
+                'usage' => $data['usage'] ?? null,
+                'timings' => $data['timings'] ?? null,
+                'timestamp' => now()->toISOString(),
             ]);
-
-            if ($msgRes->successful()) {
-                $parts = $msgRes->json('parts', []);
-                $textParts = array_filter($parts, fn($p) => ($p['type'] ?? '') === 'text');
-                $texts = array_column($textParts, 'text');
-                $reply = implode("\n", $texts);
-
-                $reasoningParts = array_filter($parts, fn($p) => ($p['type'] ?? '') === 'reasoning');
-                $reasoning = !empty($reasoningParts) ? reset($reasoningParts)['text'] : null;
-
-                return response()->json([
-                    'status' => 'success',
-                    'reply' => $reply,
-                    'thinking' => $reasoning,
-                    'model' => 'ling-3.1-flash-free (OpenCode via Laravel)',
-                    'timestamp' => now()->toISOString(),
-                ]);
-            }
         }
     } catch (\Throwable $e) {
         // Fallback to intelligent conversational handler
@@ -62,7 +72,7 @@ Route::post('/chat', function (Request $request) {
     if (preg_match('/^(yo|hey|hi|hello|sup|howdy|what\'s up|whats up)[!.,\s]*$/i', $lower)) {
         $reply = "Yo! How's it going? I'm connected and running through your **Laravel backend** ({$model}). What are you building or debugging today?";
     } elseif (preg_match('/^(who r u|who are you|what are you|who made you)[?!\s]*$/i', $lower)) {
-        $reply = "I am **{$model}**, communicating via your Laravel REST API on port 8000. I can process prompts, manage chat streams, handle multimodal file uploads, and assist with full-stack development!";
+        $reply = "I am **Gemma 4 E2B**, accelerated by llama-server.exe on port 8085 and accessible through your Laravel API on port 8000. I can process prompts, manage chat streams, handle multimodal file uploads, and assist with full-stack development!";
     } elseif (preg_match('/^(what|huh|explain|what can you do)[?!.\s]*$/i', $lower)) {
         $reply = "I'm your AI coding and chat partner! You can paste code to debug, ask architectural questions, or upload files and images.";
     } elseif (!empty($attachments)) {
@@ -103,9 +113,24 @@ Route::post('/upload', function (Request $request) {
 });
 
 Route::get('/health', function () {
+    $llamaStatus = 'offline';
+    try {
+        $check = Http::timeout(2)->get('http://127.0.0.1:8085/health');
+        if ($check->successful()) {
+            $llamaStatus = 'online';
+        }
+    } catch (\Throwable $e) {
+        $llamaStatus = 'offline';
+    }
+
     return response()->json([
         'status' => 'ok',
         'service' => 'A.I. Chat Laravel API',
+        'llama_server' => [
+            'status' => $llamaStatus,
+            'port' => 8085,
+            'model' => 'gemma-4-E2B-it-Q5_K_S.gguf',
+        ],
         'version' => '1.0.0',
     ]);
 });

@@ -4,6 +4,7 @@ export interface Attachment {
   size: number;
   type: string;
   dataUrl?: string;
+  textContent?: string;
   file?: File;
 }
 
@@ -18,6 +19,10 @@ export interface Message {
   model?: string;
   feedback?: 'like' | 'dislike' | null;
   webSearchUsed?: boolean;
+  tokens?: number;
+  speed?: number;
+  durationMs?: number;
+  promptTokens?: number;
 }
 
 export interface Chat {
@@ -33,7 +38,7 @@ export interface Chat {
 export interface ModelOption {
   id: string;
   name: string;
-  provider: 'Gemini' | 'Claude' | 'OpenAI' | 'DeepSeek' | 'OpenCode';
+  provider: 'Gemini' | 'Claude' | 'OpenAI' | 'DeepSeek' | 'OpenCode' | 'Llama.cpp';
   tagline: string;
   badge: string;
   badgeColor: string;
@@ -52,5 +57,6 @@ export interface UserSettings {
   backendApiUrl: string;
   useBackendApi: boolean;
   apiKey?: string;
-  apiProvider?: 'gemini' | 'openai' | 'openrouter' | 'opencode';
+  apiProvider?: 'gemini' | 'openai' | 'openrouter' | 'opencode' | 'llamacpp';
+  llamaServerUrl?: string;
 }

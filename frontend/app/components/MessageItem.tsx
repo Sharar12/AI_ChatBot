@@ -20,6 +20,7 @@ import {
   Eye,
   Globe,
   Terminal,
+  Zap,
 } from 'lucide-react';
 import { Message, Attachment } from '../types';
 import { AVAILABLE_MODELS } from '../data/sampleChats';
@@ -263,6 +264,16 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                 <Globe className="w-2.5 h-2.5" /> Web Grounded
               </span>
             )}
+            {!isUser && message.tokens !== undefined && (
+              <span
+                className="flex items-center gap-1 text-[10px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded font-mono"
+                title={`${message.tokens} tokens generated${message.durationMs ? ` in ${(message.durationMs / 1000).toFixed(2)}s` : ''}${message.promptTokens ? ` • Prompt: ${message.promptTokens} tok` : ''}`}
+              >
+                <Zap className="w-2.5 h-2.5 fill-emerald-400" />
+                {message.tokens} tok
+                {message.speed ? ` • ${message.speed} t/s` : ''}
+              </span>
+            )}
             <span suppressHydrationWarning className="text-[11px] text-zinc-500 ml-auto font-mono">
               {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             </span>
@@ -272,7 +283,14 @@ export const MessageItem: React.FC<MessageItemProps> = ({
           {message.attachments && message.attachments.length > 0 && (
             <div className="flex flex-wrap gap-2 mb-3">
               {message.attachments.map((att) => {
-                const isImage = att.type.startsWith('image/') || !!att.dataUrl;
+                const isImage =
+                  att.type.startsWith('image/') &&
+                  !att.type.includes('pdf') &&
+                  !att.name.toLowerCase().endsWith('.pdf');
+                const isPdf =
+                  att.type === 'application/pdf' ||
+                  att.name.toLowerCase().endsWith('.pdf');
+
                 return (
                   <div
                     key={att.id}
@@ -292,6 +310,10 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                         <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 flex items-center justify-center transition">
                           <Eye className="w-3.5 h-3.5 text-white" />
                         </div>
+                      </div>
+                    ) : isPdf ? (
+                      <div className="w-9 h-9 rounded-lg bg-rose-500/20 text-rose-400 font-bold text-[10px] flex items-center justify-center shrink-0 border border-rose-500/30">
+                        PDF
                       </div>
                     ) : (
                       <div className="w-9 h-9 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center shrink-0">
@@ -407,6 +429,12 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                   <Volume2 className="w-3.5 h-3.5" />
                 )}
               </button>
+
+              {!isUser && message.tokens !== undefined && (
+                <span className="text-[11px] text-zinc-500 font-mono ml-2 hidden sm:inline select-none">
+                  ⚡ {message.tokens} tokens {message.speed ? `(${message.speed} t/s)` : ''}
+                </span>
+              )}
 
               {onRegenerate && (
                 <button

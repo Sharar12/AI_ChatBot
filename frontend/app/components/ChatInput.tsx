@@ -12,7 +12,7 @@ import {
   X,
   FileText,
   Image as ImageIcon,
-  Sparkles,
+  AlertCircle,
 } from 'lucide-react';
 import { Attachment } from '../types';
 
@@ -119,16 +119,26 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         file,
       };
 
-      if (file.type.startsWith('image/')) {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          newAttachment.dataUrl = e.target?.result as string;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        newAttachment.dataUrl = e.target?.result as string;
+
+        // If it's a plain text or code file, also extract raw text
+        if (
+          file.type.startsWith('text/') ||
+          /\.(txt|md|csv|json|js|ts|jsx|tsx|py|html|css|xml|sql|sh|bat|env|yaml|yml)$/i.test(file.name)
+        ) {
+          const textReader = new FileReader();
+          textReader.onload = (te) => {
+            newAttachment.textContent = te.target?.result as string;
+            setAttachments((prev) => [...prev, newAttachment]);
+          };
+          textReader.readAsText(file);
+        } else {
           setAttachments((prev) => [...prev, newAttachment]);
-        };
-        reader.readAsDataURL(file);
-      } else {
-        setAttachments((prev) => [...prev, newAttachment]);
-      }
+        }
+      };
+      reader.readAsDataURL(file);
     });
   };
 
@@ -209,7 +219,14 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         {attachments.length > 0 && (
           <div className="flex flex-wrap gap-2 p-3 pb-1 border-b border-white/5">
             {attachments.map((att) => {
-              const isImg = att.type.startsWith('image/') || !!att.dataUrl;
+              const isImg =
+                att.type.startsWith('image/') &&
+                !att.type.includes('pdf') &&
+                !att.name.toLowerCase().endsWith('.pdf');
+              const isPdf =
+                att.type === 'application/pdf' ||
+                att.name.toLowerCase().endsWith('.pdf');
+
               return (
                 <div
                   key={att.id}
@@ -222,8 +239,12 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                       alt={att.name}
                       className="w-6 h-6 object-cover rounded-md"
                     />
+                  ) : isPdf ? (
+                    <div className="w-6 h-6 rounded-md bg-rose-500/20 text-rose-400 font-bold text-[9px] flex items-center justify-center shrink-0 border border-rose-500/30">
+                      PDF
+                    </div>
                   ) : (
-                    <FileText className="w-4 h-4 text-indigo-400" />
+                    <FileText className="w-4 h-4 text-indigo-400 shrink-0" />
                   )}
                   <span className="truncate max-w-[120px] text-xs">
                     {att.name}
@@ -237,6 +258,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                 </div>
               );
             })}
+
+
           </div>
         )}
 
@@ -324,6 +347,11 @@ export const ChatInput: React.FC<ChatInputProps> = ({
 
           {/* Right tool: Send / Stop button */}
           <div className="flex items-center gap-2">
+            {content.trim().length > 0 && (
+              <span className="text-[11px] text-zinc-400 font-mono select-none px-2 py-0.5 rounded-md bg-white/[0.04] border border-white/5 hidden sm:inline">
+                ~{Math.max(1, Math.ceil(content.length / 3.8))} tok
+              </span>
+            )}
             {isGenerating ? (
               <button
                 type="button"

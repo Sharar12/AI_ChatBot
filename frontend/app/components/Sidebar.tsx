@@ -59,6 +59,33 @@ export const Sidebar: React.FC<SidebarProps> = ({
     setTodayStart(new Date().setHours(0, 0, 0, 0));
   }, []);
 
+  // Compute active conversation context tokens
+  const activeChat = useMemo(() => chats.find((c) => c.id === activeChatId), [chats, activeChatId]);
+
+  const activeChatTokens = useMemo(() => {
+    if (!activeChat || !activeChat.messages) return 0;
+    return activeChat.messages.reduce((acc, m) => {
+      if (typeof m.tokens === 'number') return acc + m.tokens;
+      const textLen = (m.content || '').length + (m.thinking || '').length;
+      return acc + Math.max(1, Math.ceil(textLen / 3.8));
+    }, 0);
+  }, [activeChat]);
+
+  // Total session tokens across all chats
+  const totalSessionTokens = useMemo(() => {
+    return chats.reduce((acc, c) => {
+      const chatTokens = (c.messages || []).reduce((mAcc, m) => {
+        if (typeof m.tokens === 'number') return mAcc + m.tokens;
+        const textLen = (m.content || '').length + (m.thinking || '').length;
+        return mAcc + Math.max(1, Math.ceil(textLen / 3.8));
+      }, 0);
+      return acc + chatTokens;
+    }, 0);
+  }, [chats]);
+
+  const maxContextTokens = 128000;
+  const contextPercentage = Math.min(100, Math.round((activeChatTokens / maxContextTokens) * 100 * 10) / 10);
+
   // Group chats by date and pin status
   const { pinnedChats, todayChats, yesterdayChats, olderChats } = useMemo(() => {
     const oneDay = 24 * 60 * 60 * 1000;
@@ -377,17 +404,35 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* Footer Profile & Settings */}
       {!isCollapsed && (
         <div className="p-3 border-t border-white/5 space-y-2 bg-[#0e1017]">
-          {/* Storage / Tokens Meter */}
+          {/* Dynamic Context Window & Token Meter */}
           <div className="p-2.5 rounded-xl bg-gradient-to-r from-indigo-950/40 to-purple-950/40 border border-indigo-500/10">
             <div className="flex items-center justify-between text-xs mb-1.5">
               <span className="flex items-center gap-1.5 text-indigo-300 font-medium">
                 <Zap className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
-                Token Quota
+                Context Window
               </span>
-              <span className="text-zinc-400 text-[11px]">840k / 1M</span>
+              <span className="text-zinc-400 text-[11px] font-mono">
+                {activeChatTokens >= 1000
+                  ? `${(activeChatTokens / 1000).toFixed(1)}k`
+                  : activeChatTokens}{' '}
+                / 128k
+              </span>
             </div>
             <div className="w-full bg-zinc-800 h-1.5 rounded-full overflow-hidden">
-              <div className="bg-gradient-to-r from-indigo-500 to-purple-500 h-full w-[84%]" />
+              <div
+                className={`h-full transition-all duration-300 ${
+                  contextPercentage > 85
+                    ? 'bg-rose-500'
+                    : contextPercentage > 60
+                    ? 'bg-amber-500'
+                    : 'bg-gradient-to-r from-indigo-500 to-purple-500'
+                }`}
+                style={{ width: `${Math.max(activeChatTokens > 0 ? 1 : 0, contextPercentage)}%` }}
+              />
+            </div>
+            <div className="flex items-center justify-between text-[10px] text-zinc-500 mt-1.5 pt-0.5">
+              <span>{contextPercentage}% used</span>
+              <span>Total: {totalSessionTokens >= 1000 ? `${(totalSessionTokens / 1000).toFixed(1)}k` : totalSessionTokens} tok</span>
             </div>
           </div>
 

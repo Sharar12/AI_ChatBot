@@ -16,7 +16,7 @@ export default function Home() {
   // State management
   const [chats, setChats] = useState<Chat[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
-  const [selectedModelId, setSelectedModelId] = useState<string>('ling-3.1-flash-free');
+  const [selectedModelId, setSelectedModelId] = useState<string>('gemma-4-e2b');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
 
@@ -30,14 +30,12 @@ export default function Home() {
     theme: 'dark',
     accentColor: '#6366f1',
     systemPrompt: 'You are an exceptionally capable, concise, and helpful AI assistant.',
-    temperature: 0.7,
+    temperature: 0.6,
     soundEnabled: true,
     deepThinkDefault: false,
     webSearchDefault: false,
     backendApiUrl: 'http://127.0.0.1:8000/api',
     useBackendApi: false,
-    apiKey: 'oc_sk_0e2f387309b5_Zl4ZVGN4rR-t5J8epO2qmvpWtU0D8u7L',
-    apiProvider: 'opencode',
   });
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -49,10 +47,30 @@ export default function Home() {
       const savedChats = localStorage.getItem('nexus_ai_chats');
       if (savedChats) {
         const parsed = JSON.parse(savedChats);
-        setChats(parsed);
-        if (parsed.length > 0) {
-          setActiveChatId(parsed[0].id);
-          setSelectedModelId(parsed[0].model || 'gemini-2.5-flash');
+        const cleanedChats = Array.isArray(parsed)
+          ? parsed.map((c: Chat) => ({
+              ...c,
+              messages: (c.messages || []).map((m: Message) => ({
+                ...m,
+                attachments: m.attachments?.map((a: Attachment) => ({
+                  id: a.id,
+                  name: a.name,
+                  size: a.size,
+                  type: a.type,
+                  dataUrl:
+                    a.type?.startsWith('image/') &&
+                    !a.type?.includes('pdf') &&
+                    !a.name?.toLowerCase().endsWith('.pdf')
+                      ? a.dataUrl
+                      : undefined,
+                })),
+              })),
+            }))
+          : [];
+        setChats(cleanedChats);
+        if (cleanedChats.length > 0) {
+          setActiveChatId(cleanedChats[0].id);
+          setSelectedModelId(cleanedChats[0].model || 'gemma-4-e2b');
         }
       } else {
         setChats(INITIAL_CHATS);
@@ -233,7 +251,18 @@ ${activeChat.messages
       role: 'user',
       content,
       timestamp: Date.now(),
-      attachments,
+      attachments: attachments.map((a) => ({
+        id: a.id,
+        name: a.name,
+        size: a.size,
+        type: a.type,
+        dataUrl:
+          a.type.startsWith('image/') &&
+          !a.type.includes('pdf') &&
+          !a.name.toLowerCase().endsWith('.pdf')
+            ? a.dataUrl
+            : undefined,
+      })),
     };
 
     let targetChatId = activeChatId;
@@ -298,46 +327,141 @@ ${activeChat.messages
 
     // Generate response (Live API key, backend endpoint, or dynamic conversational synthesis)
     try {
-      // 0. Live OpenCode Ling 3.1 Flash Free
-      if (selectedModelId === 'ling-3.1-flash-free') {
+      // 0. Live llama-server Gemma 4 E2B via /api/chat with full streaming
+      if (
+        selectedModelId === 'gemma-4-e2b' ||
+        selectedModelId === 'ling-3.1-flash-free' ||
+        !settings.apiKey
+      ) {
+        const chatHistory = (activeChat?.messages || []).map((m) => ({
+          role: m.role,
+          content: m.content,
+        }));
+
         const response = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             prompt: content,
-            model: 'ling-3.1-flash-free',
-            attachments: attachments.map((a) => ({ name: a.name, size: a.size, type: a.type })),
+            messages: [
+              ...(settings.systemPrompt ? [{ role: 'system', content: settings.systemPrompt }] : []),
+              ...chatHistory,
+              { role: 'user', content },
+            ],
+            model: selectedModelId,
+            stream: true,
+            temperature: settings.temperature,
+            webSearch: options.webSearch,
+            deepThink: options.deepThink,
+            attachments: attachments.map((a) => ({
+              name: a.name,
+              size: a.size,
+              type: a.type,
+              dataUrl: a.dataUrl,
+              textContent: a.textContent,
+            })),
           }),
         });
 
-        if (response.ok) {
-          const data = await response.json();
-          const replyText = data.reply;
-          const thinkingText = data.thinking;
+        if (response.ok && response.body) {
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder('utf-8');
+          let accumulatedContent = '';
+          let accumulatedThinking = '';
+          let buffer = '';
 
-          if (thinkingText) {
-            currentChatList = currentChatList.map((c) =>
-              c.id === targetChatId
-                ? {
-                    ...c,
-                    messages: c.messages.map((m) =>
-                      m.id === assistantMessageId ? { ...m, thinking: thinkingText } : m
-                    ),
+          let finalTimings: {
+            predicted_n?: number;
+            predicted_per_second?: number;
+            predicted_ms?: number;
+            prompt_n?: number;
+          } | null = null;
+          let lastUpdate = 0;
+
+          while (true) {
+            if (stopGenerationRef.current) {
+              await reader.cancel();
+              break;
+            }
+
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            let hasNewDelta = false;
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed.startsWith('data:')) continue;
+              if (trimmed === 'data: [DONE]') continue;
+
+              try {
+                const parsed = JSON.parse(trimmed.slice(5).trim());
+                if (parsed.timings) {
+                  finalTimings = parsed.timings;
+                }
+                const delta = parsed.choices?.[0]?.delta;
+                if (delta) {
+                  if (delta.reasoning_content) {
+                    accumulatedThinking += delta.reasoning_content;
+                    hasNewDelta = true;
                   }
-                : c
-            );
-            updateChats(currentChatList);
+                  if (delta.content) {
+                    accumulatedContent += delta.content;
+                    hasNewDelta = true;
+                  }
+                }
+              } catch {
+                // Ignore partial JSON
+              }
+            }
+
+            // Throttle React state updates to ~35ms intervals to avoid browser memory spikes
+            const now = Date.now();
+            if (hasNewDelta && now - lastUpdate > 35) {
+              lastUpdate = now;
+              updateStreamingMessage(
+                targetChatId,
+                assistantMessageId,
+                accumulatedContent,
+                currentChatList,
+                accumulatedThinking || undefined
+              );
+            }
           }
 
-          if (replyText) {
-            let streamedText = '';
-            const words = replyText.split(' ');
-            for (let i = 0; i < words.length; i++) {
-              if (stopGenerationRef.current) break;
-              streamedText += (i === 0 ? '' : ' ') + words[i];
-              updateStreamingMessage(targetChatId, assistantMessageId, streamedText, currentChatList);
-              await new Promise((r) => setTimeout(r, 16));
-            }
+          if (accumulatedContent || accumulatedThinking) {
+            // Final render and clean single save to localStorage with real GPU token metrics
+            setChats((prev) => {
+              const finalChats = prev.map((c) => {
+                if (c.id !== targetChatId) return c;
+                return {
+                  ...c,
+                  updatedAt: Date.now(),
+                  messages: c.messages.map((m) =>
+                    m.id === assistantMessageId
+                      ? {
+                          ...m,
+                          content: accumulatedContent,
+                          thinking: accumulatedThinking || undefined,
+                          tokens: finalTimings?.predicted_n,
+                          speed: finalTimings?.predicted_per_second
+                            ? Math.round(finalTimings.predicted_per_second * 10) / 10
+                            : undefined,
+                          durationMs: finalTimings?.predicted_ms
+                            ? Math.round(finalTimings.predicted_ms)
+                            : undefined,
+                          promptTokens: finalTimings?.prompt_n,
+                        }
+                      : m
+                  ),
+                };
+              });
+              updateChats(finalChats);
+              return finalChats;
+            });
             setIsGenerating(false);
             return;
           }
@@ -348,6 +472,18 @@ ${activeChat.messages
       if (settings.apiKey) {
         let apiReply = '';
         if (settings.apiProvider === 'openai') {
+          const userContentParts: Array<{ type: string; text?: string; image_url?: { url: string } }> = [
+            { type: 'text', text: content },
+          ];
+          for (const att of attachments) {
+            if (att.dataUrl && att.type.startsWith('image/')) {
+              userContentParts.push({
+                type: 'image_url',
+                image_url: { url: att.dataUrl },
+              });
+            }
+          }
+
           const res = await fetch('https://api.openai.com/v1/chat/completions', {
             method: 'POST',
             headers: {
@@ -358,8 +494,8 @@ ${activeChat.messages
               model: selectedModelId === 'gpt-4o' ? 'gpt-4o' : 'gpt-4o-mini',
               messages: [
                 { role: 'system', content: settings.systemPrompt },
-                ...activeChat?.messages.map((m) => ({ role: m.role, content: m.content })) || [],
-                { role: 'user', content },
+                ...(activeChat?.messages.map((m) => ({ role: m.role, content: m.content })) || []),
+                { role: 'user', content: userContentParts },
               ],
               temperature: settings.temperature,
             }),
@@ -369,13 +505,30 @@ ${activeChat.messages
         } else {
           // Google Gemini API (free tier)
           const geminiModel = selectedModelId.includes('pro') ? 'gemini-1.5-pro' : 'gemini-1.5-flash';
+          const parts: Array<{ text?: string; inline_data?: { mime_type: string; data: string } }> = [
+            { text: content },
+          ];
+          for (const att of attachments) {
+            if (att.dataUrl && att.type.startsWith('image/')) {
+              const base64Data = att.dataUrl.split(',')[1];
+              if (base64Data) {
+                parts.push({
+                  inline_data: {
+                    mime_type: att.type,
+                    data: base64Data,
+                  },
+                });
+              }
+            }
+          }
+
           const res = await fetch(
             `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${settings.apiKey}`,
             {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                contents: [{ role: 'user', parts: [{ text: content }] }],
+                contents: [{ role: 'user', parts }],
               }),
             }
           );
@@ -414,15 +567,37 @@ ${activeChat.messages
         if (response.ok) {
           const data = await response.json();
           const replyText = data.reply || data.text;
+          const thinkingText = data.thinking;
           if (replyText) {
             let streamedText = '';
             const words = replyText.split(' ');
             for (let i = 0; i < words.length; i++) {
               if (stopGenerationRef.current) break;
               streamedText += (i === 0 ? '' : ' ') + words[i];
-              updateStreamingMessage(targetChatId, assistantMessageId, streamedText, currentChatList);
+              updateStreamingMessage(targetChatId, assistantMessageId, streamedText, currentChatList, thinkingText);
               await new Promise((r) => setTimeout(r, 18));
             }
+            setChats((prev) => {
+              const finalChats = prev.map((c) => {
+                if (c.id !== targetChatId) return c;
+                return {
+                  ...c,
+                  updatedAt: Date.now(),
+                  messages: c.messages.map((m) =>
+                    m.id === assistantMessageId
+                      ? {
+                          ...m,
+                          content: streamedText,
+                          thinking: thinkingText,
+                          tokens: Math.max(1, Math.ceil(streamedText.length / 3.8)),
+                        }
+                      : m
+                  ),
+                };
+              });
+              updateChats(finalChats);
+              return finalChats;
+            });
             setIsGenerating(false);
             return;
           }
@@ -453,29 +628,55 @@ ${activeChat.messages
       await new Promise((r) => setTimeout(r, 18));
     }
 
+    setChats((prev) => {
+      const finalChats = prev.map((c) => {
+        if (c.id !== targetChatId) return c;
+        return {
+          ...c,
+          updatedAt: Date.now(),
+          messages: c.messages.map((m) =>
+            m.id === assistantMessageId
+              ? {
+                  ...m,
+                  content: streamedText,
+                  tokens: Math.max(1, Math.ceil(streamedText.length / 3.8)),
+                }
+              : m
+          ),
+        };
+      });
+      updateChats(finalChats);
+      return finalChats;
+    });
+
     setIsGenerating(false);
   };
 
-  // Helper to update streaming message in state
+  // Helper to update streaming message in state smoothly without spamming localStorage
   const updateStreamingMessage = (
     chatId: string,
     msgId: string,
     currentText: string,
-    baseChats: Chat[]
+    _unusedBaseChats?: Chat[],
+    thinkingText?: string
   ) => {
-    const updated = baseChats.map((c) => {
-      if (c.id !== chatId) return c;
-      return {
-        ...c,
-        messages: c.messages.map((m) =>
-          m.id === msgId ? { ...m, content: currentText } : m
-        ),
-      };
-    });
-    setChats(updated);
-    try {
-      localStorage.setItem('nexus_ai_chats', JSON.stringify(updated));
-    } catch {}
+    setChats((prev) =>
+      prev.map((c) => {
+        if (c.id !== chatId) return c;
+        return {
+          ...c,
+          messages: c.messages.map((m) =>
+            m.id === msgId
+              ? {
+                  ...m,
+                  content: currentText,
+                  ...(thinkingText !== undefined ? { thinking: thinkingText } : {}),
+                }
+              : m
+          ),
+        };
+      })
+    );
   };
 
   const handleStopGeneration = () => {

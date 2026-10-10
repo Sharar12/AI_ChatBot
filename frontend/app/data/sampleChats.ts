@@ -2,13 +2,23 @@ import { Chat, ModelOption } from '../types';
 
 export const AVAILABLE_MODELS: ModelOption[] = [
   {
+    id: 'gemma-4-e2b',
+    name: 'Gemma 4 E2B',
+    provider: 'Llama.cpp',
+    tagline: 'Google Gemma 4 E2B IT on llama-server (Port 8085, 128k context, CUDA)',
+    badge: 'Live llama-server',
+    badgeColor: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+    iconColor: 'from-emerald-500 via-teal-500 to-cyan-500',
+    supportsThinking: true,
+  },
+  {
     id: 'ling-3.1-flash-free',
     name: 'Ling 3.1 Flash',
     provider: 'OpenCode',
     tagline: '560B MoE model with deep reasoning and coding intelligence',
-    badge: 'Live Connected',
-    badgeColor: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
-    iconColor: 'from-emerald-500 via-teal-500 to-cyan-500',
+    badge: 'Hybrid MoE',
+    badgeColor: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20',
+    iconColor: 'from-cyan-500 to-blue-500',
     supportsThinking: true,
   },
   {

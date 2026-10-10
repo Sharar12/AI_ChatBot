@@ -42,6 +42,31 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const [serverOnline, setServerOnline] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    const checkServer = async () => {
+      try {
+        const res = await fetch('/api/chat');
+        if (res.ok) {
+          const data = await res.json();
+          if (mounted) setServerOnline(!!data.online);
+        } else {
+          if (mounted) setServerOnline(false);
+        }
+      } catch {
+        if (mounted) setServerOnline(false);
+      }
+    };
+
+    checkServer();
+    const interval = setInterval(checkServer, 10000);
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
+  }, []);
 
   const currentModel = AVAILABLE_MODELS.find((m) => m.id === currentModelId) || AVAILABLE_MODELS[0];
 
@@ -148,6 +173,41 @@ export const Header: React.FC<HeaderProps> = ({
               </div>
             </div>
           )}
+        </div>
+
+        {/* Llama Server Status Pill */}
+        <div
+          title={
+            serverOnline === true
+              ? 'llama-server is active on http://127.0.0.1:8085 (Gemma 4 E2B)'
+              : serverOnline === false
+              ? 'llama-server is offline. Run run-llama-server.bat to start it.'
+              : 'Checking llama-server status...'
+          }
+          className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-mono border transition ${
+            serverOnline === true
+              ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'
+              : serverOnline === false
+              ? 'bg-amber-500/10 border-amber-500/20 text-amber-300'
+              : 'bg-zinc-800/60 border-white/5 text-zinc-400'
+          }`}
+        >
+          <span
+            className={`w-1.5 h-1.5 rounded-full ${
+              serverOnline === true
+                ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]'
+                : serverOnline === false
+                ? 'bg-amber-400'
+                : 'bg-zinc-500'
+            }`}
+          />
+          <span className="font-medium">
+            {serverOnline === true
+              ? 'llama-server :8085'
+              : serverOnline === false
+              ? 'llama-server offline'
+              : 'llama-server ...'}
+          </span>
         </div>
       </div>
 

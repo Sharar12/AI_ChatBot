@@ -41,3 +41,8 @@ Thumbs.db
 .fleet/
 .nova/
 .zed/
+
+# Local Llama binaries, models & test scratch
+llama.cpp/
+*.gguf
+scratch/
