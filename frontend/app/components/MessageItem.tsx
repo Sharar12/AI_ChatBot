@@ -136,6 +136,43 @@ export const MessageItem: React.FC<MessageItemProps> = ({
       return (
         <div key={index} className="space-y-1.5">
           {lines.map((line, lIdx) => {
+            // Markdown Image ![alt](url)
+            const imgMatch = line.match(/^!\[(.*?)\]\((.*?)\)$/);
+            if (imgMatch) {
+              const alt = imgMatch[1] || 'Generated image';
+              const src = imgMatch[2];
+              return (
+                <div key={lIdx} className="my-3 rounded-2xl overflow-hidden border border-white/10 bg-black/40 max-w-md shadow-xl group/img relative">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={src}
+                    alt={alt}
+                    onClick={() =>
+                      onPreviewImage({
+                        id: `gen-${lIdx}`,
+                        name: alt,
+                        size: 0,
+                        type: 'image/png',
+                        dataUrl: src,
+                      })
+                    }
+                    className="w-full h-auto max-h-[400px] object-cover rounded-2xl cursor-pointer hover:opacity-95 transition"
+                  />
+                  <div className="absolute bottom-2.5 right-2.5 flex items-center gap-1.5 opacity-0 group-hover/img:opacity-100 transition">
+                    <a
+                      href={src}
+                      download={`${alt.replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'image'}.png`}
+                      className="px-2.5 py-1 rounded-xl bg-black/75 hover:bg-black/90 text-white text-xs font-medium backdrop-blur-md border border-white/20 transition shadow-lg flex items-center gap-1.5"
+                      title="Download image"
+                    >
+                      <Download className="w-3.5 h-3.5 text-indigo-400" />
+                      <span>Download</span>
+                    </a>
+                  </div>
+                </div>
+              );
+            }
+
             // Header 3
             if (line.startsWith('### ')) {
               return (

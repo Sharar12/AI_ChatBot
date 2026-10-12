@@ -13,6 +13,7 @@ import {
   FileText,
   Image as ImageIcon,
   AlertCircle,
+  Sparkles,
 } from 'lucide-react';
 import { Attachment } from '../types';
 
@@ -20,7 +21,7 @@ interface ChatInputProps {
   onSendMessage: (
     content: string,
     attachments: Attachment[],
-    options: { webSearch: boolean; deepThink: boolean }
+    options: { webSearch: boolean; deepThink: boolean; imageGen?: boolean }
   ) => void;
   isGenerating: boolean;
   onStopGeneration: () => void;
@@ -37,6 +38,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
   const [deepThinkEnabled, setDeepThinkEnabled] = useState(false);
+  const [imageGenEnabled, setImageGenEnabled] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
 
@@ -164,6 +166,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     onSendMessage(content.trim(), attachments, {
       webSearch: webSearchEnabled,
       deepThink: deepThinkEnabled,
+      imageGen: imageGenEnabled,
     });
 
     setContent('');
@@ -214,7 +217,13 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       )}
 
       {/* Main input card */}
-      <div className="relative rounded-2xl sm:rounded-3xl bg-[#161824] border border-white/10 shadow-2xl focus-within:border-indigo-500/50 focus-within:ring-1 focus-within:ring-indigo-500/30 transition-all duration-200">
+      <div
+        className={`relative rounded-2xl sm:rounded-3xl bg-[#161824] border shadow-2xl transition-all duration-200 ${
+          imageGenEnabled
+            ? 'border-amber-500/50 ring-1 ring-amber-500/30 shadow-amber-500/10'
+            : 'border-white/10 focus-within:border-indigo-500/50 focus-within:ring-1 focus-within:ring-indigo-500/30'
+        }`}
+      >
         {/* Attachment chips preview */}
         {attachments.length > 0 && (
           <div className="flex flex-wrap gap-2 p-3 pb-1 border-b border-white/5">
@@ -270,13 +279,17 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           onChange={(e) => setContent(e.target.value)}
           onKeyDown={handleKeyDown}
           rows={1}
-          placeholder={`Ask ${selectedModelName} anything or upload files...`}
+          placeholder={
+            imageGenEnabled
+              ? '✨ Describe the image you want to generate with Stable Diffusion...'
+              : `Ask ${selectedModelName} anything or upload files...`
+          }
           className="w-full bg-transparent px-4 sm:px-5 pt-3.5 pb-2 text-sm sm:text-base text-zinc-100 placeholder-zinc-500 outline-none resize-none max-h-[220px] leading-relaxed"
         />
 
         {/* Action Toolbar */}
         <div className="flex items-center justify-between px-3 sm:px-4 py-2 text-zinc-400">
-          {/* Left tools: Upload, Search, DeepThink, Voice */}
+          {/* Left tools: Upload, Image Gen, Search, DeepThink, Voice */}
           <div className="flex items-center gap-1 sm:gap-2">
             {/* File Upload Button */}
             <input
@@ -294,6 +307,21 @@ export const ChatInput: React.FC<ChatInputProps> = ({
               title="Upload images or documents"
             >
               <Paperclip className="w-4 h-4" />
+            </button>
+
+            {/* Gemini-style Image Gen toggle */}
+            <button
+              type="button"
+              onClick={() => setImageGenEnabled(!imageGenEnabled)}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-medium transition ${
+                imageGenEnabled
+                  ? 'bg-gradient-to-r from-amber-500/25 to-rose-500/25 text-amber-300 border border-amber-500/40 shadow-sm shadow-amber-500/20'
+                  : 'hover:bg-zinc-800/80 hover:text-zinc-200 text-zinc-400 border border-transparent'
+              }`}
+              title="Create image with Stable Diffusion (Gemini style)"
+            >
+              <Sparkles className={`w-3.5 h-3.5 ${imageGenEnabled ? 'text-amber-400 animate-spin-slow' : ''}`} />
+              <span className="hidden sm:inline">Image Gen</span>
             </button>
 
             {/* Web Search toggle */}

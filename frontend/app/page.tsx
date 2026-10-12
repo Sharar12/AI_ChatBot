@@ -241,7 +241,7 @@ ${activeChat.messages
   const handleSendMessage = async (
     content: string,
     attachments: Attachment[],
-    options: { webSearch: boolean; deepThink: boolean }
+    options: { webSearch: boolean; deepThink: boolean; imageGen?: boolean }
   ) => {
     stopGenerationRef.current = false;
     setIsGenerating(true);
@@ -281,7 +281,7 @@ ${activeChat.messages
         createdAt: Date.now(),
         updatedAt: Date.now(),
         messages: [userMessage],
-        model: selectedModelId,
+        model: options.imageGen ? 'Stable Diffusion 1.5' : selectedModelId,
       };
 
       currentChatList = [newChat, ...currentChatList];
@@ -307,7 +307,7 @@ ${activeChat.messages
       role: 'assistant',
       content: '',
       timestamp: Date.now(),
-      model: selectedModelId,
+      model: options.imageGen ? 'Stable Diffusion 1.5' : selectedModelId,
       webSearchUsed: options.webSearch,
       thinking: options.deepThink
         ? `1. Parsed multimodal prompt context.\n2. Identified key constraints and optimal architecture.\n3. Formulated verified code & explanation pipeline.`
@@ -327,7 +327,69 @@ ${activeChat.messages
 
     // Generate response (Live API key, backend endpoint, or dynamic conversational synthesis)
     try {
-      // 0. Live llama-server Gemma 4 E2B via /api/chat with full streaming
+      // 0. Gemini-style Image Generation via Stable Diffusion
+      if (options.imageGen || /^\/(image|imagine)\b/i.test(content.trim())) {
+        const rawPrompt = content.replace(/^\/(image|imagine)\s*/i, '').trim() || content.trim();
+
+        // Show intermediate loading state
+        updateChats(
+          currentChatList.map((c) =>
+            c.id === targetChatId
+              ? {
+                  ...c,
+                  messages: c.messages.map((m) =>
+                    m.id === assistantMessageId
+                      ? {
+                          ...m,
+                          content: `🎨 **Generating image with Realistic Vision V6.0...**\n\n> *Prompt:* "${rawPrompt}"\n\n*Running photorealistic generation on RTX 5070 Ti (Vulkan GPU)...*`,
+                          model: 'Realistic Vision V6.0 (Vulkan GPU)',
+                        }
+                      : m
+                  ),
+                }
+              : c
+          )
+        );
+
+        const imgEndpoint = settings.useBackendApi ? `${settings.backendApiUrl}/image` : '/api/image';
+        const imgRes = await fetch(imgEndpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt: rawPrompt, width: 512, height: 512, steps: 15 }),
+        });
+
+        const imgData = await imgRes.json();
+        if (imgData.success && imgData.url) {
+          const durationStr = imgData.duration ? ` in ${imgData.duration}s` : '';
+          const modelTitle = imgData.model || 'Realistic Vision V6.0';
+          const finalReply = `### Generated with ${modelTitle}\n\n![${rawPrompt}](${imgData.url})\n\n> **Prompt**: *${rawPrompt}*\n> *Rendered locally via stable-diffusion.cpp (Vulkan GPU)${durationStr}*`;
+
+          updateChats(
+            currentChatList.map((c) =>
+              c.id === targetChatId
+                ? {
+                    ...c,
+                    messages: c.messages.map((m) =>
+                      m.id === assistantMessageId
+                        ? {
+                            ...m,
+                            content: finalReply,
+                            model: modelTitle,
+                          }
+                        : m
+                    ),
+                  }
+                : c
+            )
+          );
+          setIsGenerating(false);
+          return;
+        } else {
+          throw new Error(imgData.error || 'Failed to generate image');
+        }
+      }
+
+      // 1. Live llama-server Gemma 4 E2B via /api/chat with full streaming
       if (
         selectedModelId === 'gemma-4-e2b' ||
         selectedModelId === 'ling-3.1-flash-free' ||

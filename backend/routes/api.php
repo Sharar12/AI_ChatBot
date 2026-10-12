@@ -112,6 +112,41 @@ Route::post('/upload', function (Request $request) {
     ]);
 });
 
+Route::post('/image', function (Request $request) {
+    $prompt = trim($request->input('prompt', ''));
+    $width = (int)$request->input('width', 512);
+    $height = (int)$request->input('height', 512);
+    $steps = (int)$request->input('steps', 15);
+    $cfg = (float)$request->input('cfg', 7.0);
+
+    if (empty($prompt)) {
+        return response()->json(['success' => false, 'error' => 'Prompt is required'], 400);
+    }
+
+    $scriptPath = base_path('../scripts/generate_image.py');
+    $cmd = sprintf(
+        'python %s --prompt %s --width %d --height %d --steps %d --cfg %F',
+        escapeshellarg($scriptPath),
+        escapeshellarg($prompt),
+        $width,
+        $height,
+        $steps,
+        $cfg
+    );
+
+    $output = shell_exec($cmd);
+    if (!$output) {
+        return response()->json(['success' => false, 'error' => 'Failed to execute image generation'], 500);
+    }
+
+    $data = json_decode($output, true);
+    if (!isset($data['success']) || !$data['success']) {
+        return response()->json($data ?: ['success' => false, 'error' => 'Generation failed'], 500);
+    }
+
+    return response()->json($data);
+});
+
 Route::get('/health', function () {
     $llamaStatus = 'offline';
     try {
@@ -123,6 +158,11 @@ Route::get('/health', function () {
         $llamaStatus = 'offline';
     }
 
+    $rvPath = base_path('../stable-diffusion.cpp/models/Realistic_Vision_V6.0_NV_B1_fp16.safetensors');
+    $basePath = base_path('../stable-diffusion.cpp/models/v1-5-pruned-emaonly-Q4_0.gguf');
+    $sdModel = file_exists($rvPath) ? 'Realistic_Vision_V6.0_NV_B1_fp16.safetensors' : (file_exists($basePath) ? 'v1-5-pruned-emaonly-Q4_0.gguf' : null);
+    $sdReady = !empty($sdModel) && file_exists(base_path('../stable-diffusion.cpp/sd-cli.exe'));
+
     return response()->json([
         'status' => 'ok',
         'service' => 'A.I. Chat Laravel API',
@@ -131,6 +171,12 @@ Route::get('/health', function () {
             'port' => 8085,
             'model' => 'gemma-4-E2B-it-Q5_K_S.gguf',
         ],
+        'stable_diffusion' => [
+            'status' => $sdReady ? 'ready' : 'downloading',
+            'model' => $sdModel ?: 'None',
+            'engine' => 'stable-diffusion.cpp (Vulkan GPU)',
+        ],
         'version' => '1.0.0',
     ]);
 });
+

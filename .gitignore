@@ -42,7 +42,13 @@ Thumbs.db
 .nova/
 .zed/
 
-# Local Llama binaries, models & test scratch
+# Local Llama & Stable Diffusion binaries, models & generated assets
 llama.cpp/
+stable-diffusion.cpp/
 *.gguf
+*.safetensors
+*.ckpt
+*.bin
+frontend/public/generated/
 scratch/
+
